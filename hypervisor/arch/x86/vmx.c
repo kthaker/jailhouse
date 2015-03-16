@@ -471,7 +471,7 @@ static bool vmcs_setup(struct per_cpu *cpu_data)
 			   sizeof(cpu_data->stack));
 	ok &= vmcs_write64(HOST_RIP, (unsigned long)vmx_vmexit);
 
-	ok &= vmx_set_guest_cr(CR0_IDX, read_cr0());
+	ok &= vmx_set_guest_cr(CR0_IDX, cpu_data->linux_cr0);
 	ok &= vmx_set_guest_cr(CR4_IDX, read_cr4());
 
 	ok &= vmcs_write64(GUEST_CR3, cpu_data->linux_cr3);
@@ -583,8 +583,6 @@ int vcpu_init(struct per_cpu *cpu_data)
 	cpu_data->vmcs.revision_id = revision_id;
 	cpu_data->vmcs.shadow_indicator = 0;
 
-	// TODO: validate CR0
-
 	/* Note: We assume that TXT is off */
 	feature_ctrl = read_msr(MSR_IA32_FEATURE_CONTROL);
 	mask = FEATURE_CONTROL_LOCKED |
@@ -597,6 +595,9 @@ int vcpu_init(struct per_cpu *cpu_data)
 		feature_ctrl |= mask;
 		write_msr(MSR_IA32_FEATURE_CONTROL, feature_ctrl);
 	}
+
+	write_cr0((read_cr0() & X86_CR0_RESERVED & cr_maybe1[CR0_IDX]) |
+		  X86_CR0_HOST_STATE | cr_required1[CR0_IDX]);
 
 	write_cr4(cr4 | X86_CR4_VMXE);
 	// TODO: validate CR4
@@ -662,6 +663,7 @@ vcpu_deactivate_vmm(struct registers *guest_regs)
 	unsigned long linux_ip = vmcs_read64(GUEST_RIP);
 	struct per_cpu *cpu_data = this_cpu_data();
 
+	cpu_data->linux_cr0 = vmcs_read64(GUEST_CR0);
 	cpu_data->linux_cr3 = vmcs_read64(GUEST_CR3);
 
 	cpu_data->linux_gdtr.base = vmcs_read64(GUEST_GDTR_BASE);
