@@ -472,7 +472,7 @@ static bool vmcs_setup(struct per_cpu *cpu_data)
 	ok &= vmcs_write64(HOST_RIP, (unsigned long)vmx_vmexit);
 
 	ok &= vmx_set_guest_cr(CR0_IDX, cpu_data->linux_cr0);
-	ok &= vmx_set_guest_cr(CR4_IDX, read_cr4());
+	ok &= vmx_set_guest_cr(CR4_IDX, cpu_data->linux_cr4);
 
 	ok &= vmcs_write64(GUEST_CR3, cpu_data->linux_cr3);
 
@@ -565,12 +565,11 @@ static bool vmcs_setup(struct per_cpu *cpu_data)
 
 int vcpu_init(struct per_cpu *cpu_data)
 {
-	unsigned long cr4, feature_ctrl, mask;
+	unsigned long feature_ctrl, mask;
 	u32 revision_id;
 	int err;
 
-	cr4 = read_cr4();
-	if (cr4 & X86_CR4_VMXE)
+	if (cpu_data->linux_cr4 & X86_CR4_VMXE)
 		return -EBUSY;
 
 	err = vmx_check_features();
@@ -598,12 +597,11 @@ int vcpu_init(struct per_cpu *cpu_data)
 
 	write_cr0((read_cr0() & X86_CR0_RESERVED & cr_maybe1[CR0_IDX]) |
 		  X86_CR0_HOST_STATE | cr_required1[CR0_IDX]);
-
-	write_cr4(cr4 | X86_CR4_VMXE);
-	// TODO: validate CR4
+	write_cr4((read_cr4() & X86_CR4_RESERVED & cr_maybe1[CR4_IDX]) |
+		  X86_CR4_HOST_STATE | cr_required1[CR4_IDX]);
 
 	if (!vmxon(cpu_data))  {
-		write_cr4(cr4);
+		write_cr4(cpu_data->linux_cr4);
 		return -EIO;
 	}
 
@@ -631,7 +629,7 @@ void vcpu_exit(struct per_cpu *cpu_data)
 
 	vmcs_clear(cpu_data);
 	asm volatile("vmxoff" : : : "cc");
-	write_cr4(read_cr4() & ~X86_CR4_VMXE);
+	cpu_data->linux_cr4 &= ~X86_CR4_VMXE;
 }
 
 void __attribute__((noreturn)) vcpu_activate_vmm(struct per_cpu *cpu_data)
@@ -665,6 +663,7 @@ vcpu_deactivate_vmm(struct registers *guest_regs)
 
 	cpu_data->linux_cr0 = vmcs_read64(GUEST_CR0);
 	cpu_data->linux_cr3 = vmcs_read64(GUEST_CR3);
+	cpu_data->linux_cr4 = vmcs_read64(GUEST_CR4);
 
 	cpu_data->linux_gdtr.base = vmcs_read64(GUEST_GDTR_BASE);
 	cpu_data->linux_gdtr.limit = vmcs_read64(GUEST_GDTR_LIMIT);

@@ -175,7 +175,7 @@ static int vmcb_setup(struct per_cpu *cpu_data)
 
 	vmcb->cr0 = cpu_data->linux_cr0 & ~SVM_CR0_CLEARED_BITS;
 	vmcb->cr3 = cpu_data->linux_cr3;
-	vmcb->cr4 = read_cr4();
+	vmcb->cr4 = cpu_data->linux_cr4;
 
 	set_svm_segment_from_segment(&vmcb->cs, &cpu_data->linux_cs);
 	set_svm_segment_from_segment(&vmcb->ds, &cpu_data->linux_ds);
@@ -397,8 +397,9 @@ int vcpu_init(struct per_cpu *cpu_data)
 	if (!vmcb_setup(cpu_data))
 		return -EIO;
 
-	/* bring CR0 into well-defined state */
+	/* bring CR0 and CR4 into well-defined states */
 	write_cr0((read_cr0() & X86_CR0_RESERVED) | X86_CR0_HOST_STATE);
+	write_cr4((read_cr4() & X86_CR4_RESERVED) | X86_CR4_HOST_STATE);
 
 	write_msr(MSR_VM_HSAVE_PA, paging_hvirt2phys(cpu_data->host_state));
 
